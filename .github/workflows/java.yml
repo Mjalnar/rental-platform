@@ -106,6 +106,9 @@ jobs:
 
       - name: Build (and push from main only)
         uses: docker/build-push-action@v6
+        env:
+          # Rapport de build publié automatiquement : même rétention que les autres.
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
         with:
           context: apps/car-rental-service
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
