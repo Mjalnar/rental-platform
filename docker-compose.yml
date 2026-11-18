@@ -1,0 +1,14 @@
+services:
+  pricing-service:
+    build: ./apps/pricing-service
+    ports:
+      - "${PRICING_PORT:-8000}:8000"
+
+  car-rental-service:
+    build: ./apps/car-rental-service
+    environment:
+      PRICING_BASE_URL: http://pricing-service:8000
+    ports:
+      - "${CAR_RENTAL_PORT:-8080}:8080"
+    depends_on:
+      - pricing-service

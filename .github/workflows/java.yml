@@ -1,0 +1,20 @@
+name: Java service
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Tests
+        working-directory: apps/car-rental-service
+        run: ./gradlew clean test
+      - name: Docker image
+        run: docker build -t car-rental-service apps/car-rental-service
