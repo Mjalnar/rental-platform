@@ -159,18 +159,38 @@ secret poussé ; d'où l'importance de la révocation (tableau ci-dessous).
 | **Révoquer le secret** | Le secret devient inutilisable chez le fournisseur ; on en émet un nouveau, stocké dans un gestionnaire de secrets. | **Oui, c'est la priorité absolue** dès qu'un secret a été exposé. |
 | **Réécrire l'historique** (`git filter-repo`, BFG) | Le secret disparaît des commits, mais les SHA changent : push forcé, coordination de l'équipe, et les forks et clones existants le conservent. | Complément de nettoyage, jamais un substitut à la révocation. |
 
-## Étape 7 : protéger `main` (après validation de l'enseignant)
+## Étape 7 : protéger `main`
 
-*Settings → Branches → Add rule* (ou *Rulesets*) sur `main` :
+Règle de protection classique sur `main` (*Settings → Branches*) :
 
-- *Require a pull request before merging* ;
-- *Require status checks to pass*, avec les contrôles `Java tests`,
-  `Java quality`, `Java Docker image`, `Python tests`, `Python quality`,
-  `Python Docker image` et `Secret detection` ;
-- *Require branches to be up to date before merging*.
+- *Require a pull request before merging*, **sans** *Require approvals* ;
+- *Require status checks to pass before merging*, avec les 7 contrôles requis :
+  `Java tests`, `Java quality`, `Java Docker image`, `Python tests`,
+  `Python quality`, `Python Docker image` et `Secret detection` ;
+- *Require branches to be up to date before merging* ;
+- *Do not allow bypassing the above settings* : même le propriétaire du dépôt
+  ne peut pas fusionner une PR rouge.
 
-Vérifications : une PR rouge doit être bloquée (bouton *Merge* désactivé) et une
-PR verte doit être fusionnable.
+**Vérifications réalisées :**
+
+| PR | Contrôles | Fusion |
+|---|---|---|
+| PR temporaire `tmp/red-pr-test` (test Python cassé) | `Python tests` ❌, `Python Docker image` sauté, 5 ✅ | **Bloquée** (bouton *Merge* grisé) ; PR fermée sans fusion |
+| PR #1 `tp/01-ci` | 7 ✅ | Possible |
+
+**Pièges rencontrés :**
+
+1. *Require approvals* était coché. Seul sur le dépôt, je ne peux pas approuver
+   ma propre PR, donc même une PR verte était bloquée (« Review required »).
+2. *Require status checks* était coché, mais **aucun contrôle n'avait été
+   ajouté** (« No checks have been added »). La règle n'exigeait alors rien, et la
+   PR rouge restait fusionnable. Il faut sélectionner chaque contrôle dans la
+   liste de suggestions. C'est pourquoi on vérifie toujours une règle de
+   protection avec une PR rouge, au lieu de supposer qu'elle fonctionne.
+3. GitHub traite un contrôle requis **sauté** (`skipped`) comme non bloquant.
+   Sur la PR rouge, c'est l'échec de `Python tests` qui bloque, pas le saut de
+   `Python Docker image`. Il faut donc rendre obligatoires les jobs de tests et
+   de qualité, et pas seulement le job image.
 
 ## Validation locale
 
