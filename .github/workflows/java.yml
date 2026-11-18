@@ -21,9 +21,6 @@ defaults:
   run:
     working-directory: apps/car-rental-service
 
-env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/car-rental-service
-
 jobs:
   tests:
     name: Java tests
@@ -91,6 +88,11 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # Un nom d'image Docker doit être en minuscules, contrairement au
+      # propriétaire GitHub (ex. VictorBonnin).
+      - name: Compute image name
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/car-rental-service" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v3
 
