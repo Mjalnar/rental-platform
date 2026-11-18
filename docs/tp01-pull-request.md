@@ -111,6 +111,22 @@ reste locale et justifiée par un commentaire :
 `SuppressWarningsHolder`) ou `# noqa: XXX` côté Ruff. Aucune règle n'est
 désactivée globalement.
 
+## Étape 4 : un rapport disponible après un échec
+
+Commits `test: add unused import on purpose…` puis
+`test: remove unused import after observing quality report`.
+
+- `Java quality` échoue à l'étape *Checkstyle*, avec la ligne de log
+  `[ant:checkstyle] [ERROR] …/Car.java:3:8: Unused import - java.util.List. [UnusedImports]`.
+- `Java Docker image` est **sauté** (`needs`) : aucune image n'est construite
+  à partir d'un code non conforme.
+- Malgré l'échec, l'artefact `java-checkstyle-reports` est téléchargeable dans
+  l'onglet de l'exécution, grâce à `if: always()`. Son `main.html` contient :
+
+  | Fichier | Sévérité | Description | Ligne |
+  |---|---|---|---|
+  | `apps/car-rental-service/src/main/java/fr/efrei/rental/Car.java` | error | Unused import - java.util.List. | 3 |
+
 ## Étape 5 : détection de secrets
 
 Le scan porte sur `fetch-depth: 0`, donc sur tous les commits et pas seulement
