@@ -37,8 +37,14 @@ Limites constatées :
 
 Commits `test: break pricing assertion…` puis `test: restore pricing assertion…`.
 
-> Les réponses ci-dessous décrivent le comportement attendu. Les durées
-> exactes sont à relever dans l'onglet *Actions* de la PR.
+Observé sur la PR avec les workflows de départ : 2 contrôles en échec et 2 en succès.
+
+| Contrôle | Résultat | Durée |
+|---|---|---|
+| `Python service / build (pull_request)` | ❌ | 18 s |
+| `Python service / build (push)` | ❌ | 21 s |
+| `Java service / build (pull_request)` | ✅ | 1 min |
+| `Java service / build (push)` | ✅ | 1 min |
 
 1. **Premier job en échec** : `Python service / build`, à l'étape `Tests`.
    Le workflow Java reste vert, car les deux workflows sont indépendants.
@@ -48,8 +54,20 @@ Commits `test: break pricing assertion…` puis `test: restore pricing assertion
 3. **Rapport structuré** : avec le workflow de départ, **non**. Il n'y a que le
    log brut, et l'étape `Docker image` est sautée. Après l'étape 4, l'artefact
    `python-test-reports` (`pytest.xml`) reste disponible.
-4. **Délai de retour** : environ ___ min (à relever). Il se compose de la file
-   d'attente du runner, de `pip install` sans cache et de Pytest.
+4. **Délai de retour** : environ **20 s** pour l'échec Python (18 à 21 s), et
+   **1 min** pour savoir que Java est vert. Ce délai couvre la file d'attente
+   du runner, `pip install` sans cache et Pytest. L'échec arrive vite parce que
+   la construction de l'image est sautée. Le retour complet de la PR dépend donc
+   du workflow le plus lent : Java, à cause de Gradle sans cache.
+
+Deux autres constats :
+
+- **Chaque workflow tourne deux fois** (`push` et `pull_request`) sur le même
+  commit. Cela double le coût sans apporter d'information. Le nouveau graphe ne
+  déclenche `push` que sur `main`.
+- **Le bouton *Merge pull request* reste actif** alors que des contrôles sont
+  rouges : rien n'empêche d'intégrer une régression. C'est l'objet de l'étape 7
+  (protection de `main`).
 
 ## Choix de conception
 
