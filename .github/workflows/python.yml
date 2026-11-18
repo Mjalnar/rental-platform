@@ -43,7 +43,16 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
 
       - name: Run tests
-        run: python -m pytest
+        run: python -m pytest --junitxml=build/test-results/pytest.xml
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-reports
+          path: apps/pricing-service/build/test-results/
+          retention-days: 7
+          if-no-files-found: warn
 
   quality:
     name: Python quality
@@ -61,11 +70,24 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      # Le rapport JUnit est produit même en cas d'échec, puis le format est vérifié.
       - name: Ruff lint
-        run: python -m ruff check app tests --output-format=github
+        run: |
+          mkdir -p build/reports
+          python -m ruff check app tests --output-format=junit --output-file=build/reports/ruff.xml \
+            || { python -m ruff check app tests --output-format=github; exit 1; }
 
       - name: Ruff format
         run: python -m ruff format --check app tests
+
+      - name: Upload Ruff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-ruff-report
+          path: apps/pricing-service/build/reports/
+          retention-days: 7
+          if-no-files-found: warn
 
   image:
     name: Python Docker image

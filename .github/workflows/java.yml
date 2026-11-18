@@ -43,6 +43,17 @@ jobs:
       - name: Run tests
         run: ./gradlew test --no-daemon
 
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-test-reports
+          path: |
+            apps/car-rental-service/build/test-results/test/
+            apps/car-rental-service/build/reports/tests/test/
+          retention-days: 7
+          if-no-files-found: warn
+
   quality:
     name: Java quality
     runs-on: ubuntu-latest
@@ -59,6 +70,15 @@ jobs:
 
       - name: Checkstyle
         run: ./gradlew checkstyleMain checkstyleTest --no-daemon
+
+      - name: Upload Checkstyle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-checkstyle-reports
+          path: apps/car-rental-service/build/reports/checkstyle/
+          retention-days: 7
+          if-no-files-found: warn
 
   image:
     name: Java Docker image
