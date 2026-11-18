@@ -133,9 +133,25 @@ Le scan porte sur `fetch-depth: 0`, donc sur tous les commits et pas seulement
 sur le diff. Le binaire Gitleaks est épinglé (8.30.1) et le rapport SARIF est
 expurgé (`--redact`). L'allowlist se limite à `gradle-wrapper.jar`.
 
-Test à faire avec la **valeur factice fournie par l'enseignant**, sur une branche
-jetable : le job `Secret detection` doit échouer. Supprimez ensuite cette branche
-selon ses consignes.
+**Test réalisé.** Aucune valeur factice n'avait été transmise par l'enseignant.
+J'ai donc utilisé une chaîne **générée aléatoirement** au format d'un jeton
+GitHub (`ghp_` suivi de 36 caractères). Elle n'a jamais été émise par GitHub et
+ne donne accès à rien. Déroulé :
+
+1. Branche jetable `tmp/gitleaks-test` avec un fichier `leak-test.env`
+   contenant le faux jeton.
+2. Le déclenchement manuel (`workflow_dispatch`) n'était pas disponible :
+   GitHub ne propose *Run workflow* que si le workflow existe sur la branche
+   par défaut. J'ai donc ouvert une PR temporaire vers `main`.
+3. Résultat : `Secret detection` ❌, règle `github-pat`, valeur masquée
+   (`REDACTED`), `WRN leaks found: 1`. Les autres contrôles restent verts.
+4. PR fermée **sans fusion**, puis branche supprimée sur GitHub et en local.
+   `main` ne contient pas le fichier.
+
+Limite observée : le commit reste accessible sur GitHub via la PR fermée
+(`refs/pull/<n>/head`), même après la suppression de la branche. Seul le support
+GitHub peut le purger. Supprimer une branche ne suffit donc pas à effacer un
+secret poussé ; d'où l'importance de la révocation (tableau ci-dessous).
 
 | Action | Effet | Suffisant ? |
 |---|---|---|
