@@ -1,0 +1,131 @@
+---
+title: "Compte rendu — TP 01 : une CI observable et bloquante"
+author: "Lucas BAURY"
+toc: true
+number-sections: true
+lang: fr
+---
+
+## Préparation et lecture des workflows initiaux
+
+Branche de travail `tp/01-ci` créée depuis `checkpoint/00-starter`.
+
+| Job initial | Risque couvert | Entrées | Sortie | Coût approx. |
+|---|---|---|---|---|
+| `Java service / build` | Régression fonctionnelle Java, Dockerfile cassé | Code `apps/car-rental-service`, JDK 21, dépendances Maven (sans cache) | Statut succès/échec, image locale jetée | 2 à 4 min |
+| `Python service / build` | Régression fonctionnelle Python, Dockerfile cassé | Code `apps/pricing-service`, Python 3.12, dépendances pip (sans cache) | Statut succès/échec, image locale jetée | 1 à 2 min |
+
+Faiblesses constatées :
+
+- tests et construction d'image dans un même job séquentiel : un test rouge
+  masque l'état du Dockerfile ;
+- aucun contrôle qualité (style, imports, formatage) ;
+- aucun rapport conservé, seulement le log brut ;
+- pas de cache, de timeout, de permissions explicites ni de gestion de la
+  concurrence ;
+- déclencheur `push` sans filtre : chaque push sur une branche de PR lance
+  le workflow deux fois (`push` + `pull_request`).
+
+## Observer un échec
+
+Assertion volontairement cassée dans `tests/test_pricing.py` (`120` → `999`),
+puis rétablie, en deux commits.
+
+1. **Job en échec** : `Python service / build`, step `Tests`. Le workflow Java
+   reste vert. Le step `Docker image` n'est jamais exécuté.
+2. **Ligne utile** :
+   `FAILED tests/test_pricing.py::test_standard_two_days_costs_120_eur - AssertionError: assert 120.0 == 999`,
+   localisée en `tests/test_pricing.py:8`. Pytest affiche l'objet `Quote`
+   complet, ce qui donne directement la valeur réelle.
+3. **Rapport structuré** : aucun. Seul le log brut est consultable dans
+   l'interface ; aucun fichier JUnit XML téléchargeable.
+4. **Temps de retour** : environ 22 s entre le push et le statut rouge, dont
+   l'essentiel en mise en place (installation de Python et pip sans cache) ; les
+   tests eux-mêmes durent 0,19 s.
+
+## Portes qualité
+
+### Java — Checkstyle
+
+Plugin `checkstyle` (outil 10.21.4) ajouté à `build.gradle`, configuration dans
+`config/checkstyle/checkstyle.xml`. Toute violation est une erreur
+(`maxWarnings = 0`), la porte est donc bloquante.
+
+| Règle | Justification |
+|---|---|
+| `UnusedImports`, `RedundantImport` | Un import mort masque les vraies dépendances d'une classe |
+| `NeedBraces` | Évite les bugs de type *goto fail* lors de l'ajout d'une ligne |
+| `EmptyStatement`, `EmptyBlock` | Un `;` isolé ou un bloc vide cache souvent une erreur |
+| `LineLength` (120) | Diffs et revues côte à côte lisibles |
+
+### Python — Ruff
+
+`ruff==0.8.6` ajouté à `requirements-dev.txt`, configuration dans `ruff.toml` :
+familles `E` (pycodestyle), `F` (pyflakes : imports inutiles, noms indéfinis) et
+`I` (ordre des imports), plus `ruff format --check`.
+
+Le code existant respectait déjà toutes les règles : aucune exception locale
+n'a été nécessaire. Le caractère bloquant a été vérifié en local avec des
+fichiers volontairement fautifs (code de sortie 1).
+
+## Graphe CI
+
+Chaque workflow contient désormais trois jobs :
+
+```text
+tests ────┐
+          ├──> image Docker
+qualité ──┘
+```
+
+| Contrainte | Mise en œuvre |
+|---|---|
+| Timeout explicite | `timeout-minutes` : 10 min (tests, qualité), 15 min (image) |
+| Permissions minimales | `contents: read` au niveau du workflow ; `packages: write` seulement sur le job image |
+| Dépendance avant construction | `needs: [tests, quality]` sur le job image |
+| Cache des dépendances | `setup-java` avec `cache: gradle`, `setup-python` avec `cache: pip` ; cache BuildKit `type=gha` pour les couches Docker |
+| Annulation des exécutions obsolètes | `concurrency` par workflow et par ref, `cancel-in-progress` sauf sur `main` |
+| Pas de publication depuis une PR | `push` de l'image vers GHCR uniquement si `event == push` **et** `ref == main` ; sur PR l'image est seulement construite |
+
+Le déclencheur `push` est limité à `main` : sur une PR, seul l'événement
+`pull_request` lance les contrôles, ce qui supprime les exécutions en double.
+
+### Pourquoi éviter `paths` sur `pull_request`
+
+Les noms de jobs (`Java tests`, `Python quality`, etc.) deviennent des contrôles
+**requis** par la protection de `main`. Si un filtre `paths` empêche le workflow
+de se déclencher (par exemple une PR qui ne touche que le service Python), le
+contrôle Java requis n'est jamais rapporté : GitHub l'affiche « Expected —
+Waiting for status to be reported » et la PR reste bloquée indéfiniment. À
+l'inverse, contourner ce blocage pousse à rendre les contrôles non requis, ce qui
+affaiblit la protection. Les workflows s'exécutent donc sur toutes les PR ; le
+cache limite le coût de ces exécutions.
+
+## Preuves : rapports téléchargeables
+
+Chaque job de tests et de qualité publie ses rapports avec
+`actions/upload-artifact@v4`, en `if: always()` pour qu'ils restent disponibles
+même quand l'étape précédente échoue, avec une rétention de 7 jours.
+
+| Artefact | Contenu | Format |
+|---|---|---|
+| `java-test-reports` | `build/test-results/test/` et `build/reports/tests/test/` | JUnit XML et HTML |
+| `java-checkstyle-reports` | `build/reports/checkstyle/` | XML et HTML |
+| `python-test-reports` | `reports/pytest-junit.xml` (`pytest --junitxml`) | JUnit XML |
+| `python-quality-reports` | `reports/ruff-junit.xml` (`ruff --output-format=junit`) | JUnit XML |
+
+Choix :
+
+- `if: always()` : le rapport est surtout utile sur un build rouge ; sans cette
+  condition, l'upload serait sauté dès qu'un test échoue.
+- Rétention de 7 jours : suffisant pour diagnostiquer une PR, sans accumuler de
+  stockage (90 jours par défaut).
+- `if-no-files-found: warn` : si la compilation échoue avant les tests, aucun
+  rapport n'existe ; on signale l'absence sans masquer la vraie erreur.
+- `--continue` sur Checkstyle : `checkstyleTest` s'exécute même si
+  `checkstyleMain` échoue, le rapport couvre donc tout le code.
+
+### Vérification par un échec provoqué
+
+TODO : décrire l'échec provoqué, le job rouge, le job image non exécuté
+(*skipped*) et l'artefact téléchargé depuis l'onglet de l'exécution.
